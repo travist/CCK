@@ -1,4 +1,4 @@
-# $Id$
+# $Id: includes.de.po,v 1.1.2.23 2009/06/16 17:19:19 hass Exp $
 # German translation of CCK
 # Copyright 2006 Lukas Gangoly <lukas.gangoly@univie.ac.at>
 # Copyright 2006 Jakob Petsovits <jpetso@gmx.at>

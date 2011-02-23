@@ -1,5 +1,5 @@
 <?php
-// $Id$
+// $Id: content_plugin_style_php_array_ac.inc,v 1.1.2.3 2009/11/04 15:31:28 markuspetrux Exp $
 
 /**
  * @file
@@ -13,6 +13,11 @@ class content_plugin_style_php_array_ac extends views_plugin_style {
     $sets = $this->render_grouping($this->view->result, $this->options['grouping']);
 
     $base_field = $this->view->base_field;
+    $base_field_alias = $this->view->field[$base_field]->field_alias;
+    if( isset($base_field_alias) ){
+      $base_field = $base_field_alias;
+    }
+
     $title_field = $this->display->display_options['content_title_field'];
     $title_field_alias = $this->view->field[$title_field]->field_alias;
 
@@ -21,14 +26,16 @@ class content_plugin_style_php_array_ac extends views_plugin_style {
     $this->view->row_index = 0;
     foreach ($sets as $title => $records) {
       foreach ($records as $label => $row) {
-        $results[$row->{$base_field}] = array(
-          'title' => $row->{$title_field_alias},
-          'rendered' => $this->row_plugin->render($row),
-        );
-        $this->view->row_index++;
+        if( !is_null($row->{$base_field}) ) {
+          $results[$row->{$base_field}] = array(
+            'title' => $row->{$title_field_alias},
+            'rendered' => $this->row_plugin->render($row),
+          );
+          $this->view->row_index++;
+        }
       }
-    }
-    unset($this->view->row_index);
-    return $results;
   }
+  unset($this->view->row_index);
+  return $results;
+}
 }

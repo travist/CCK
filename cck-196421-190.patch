@@ -1,0 +1,674 @@
+diff -rupN content.module content.module
+--- content.module	2009-03-18 20:20:52.000000000 +0100
++++ content.module	2009-04-18 11:54:15.000000000 +0200
+@@ -260,8 +260,8 @@ function content_load(&$node) {
+  *
+  */
+ function content_validate(&$node, $form = NULL) {
+-  _content_field_invoke('validate', $node, $form);
+   _content_field_invoke_default('validate', $node, $form);
++  _content_field_invoke('validate', $node, $form);
+ }
+ 
+ /**
+@@ -490,8 +490,11 @@ function theme_content_multiple_values($
+         'data' => t('!title: !required', array('!title' => $element['#title'], '!required' => $required)),
+         'colspan' => 2
+       ),
+-      t('Order'),
++      array('data' => t('Order'), 'class' => 'content-multiple-weight-header'),
+     );
++    if ($field['multiple'] == 1) {
++      $header[] = array('data' => '<span>'. t('Remove') .'</span>', 'class' => 'content-multiple-remove-header');
++    }
+     $rows = array();
+ 
+     // Sort items according to '_weight' (needed when the form comes back after
+@@ -499,24 +502,31 @@ function theme_content_multiple_values($
+     $items = array();
+     foreach (element_children($element) as $key) {
+       if ($key !== $element['#field_name'] .'_add_more') {
+-        $items[] = &$element[$key];
++        $items[$element[$key]['#delta']] = &$element[$key];
+       }
+     }
+-    usort($items, '_content_sort_items_value_helper');
++    uasort($items, '_content_sort_items_value_helper');
+ 
+     // Add the items as table rows.
+-    foreach ($items as $key => $item) {
++    foreach ($items as $delta => $item) {
+       $item['_weight']['#attributes']['class'] = $order_class;
+       $delta_element = drupal_render($item['_weight']);
++      if ($field['multiple'] == 1) {
++        $remove_element = drupal_render($item['_remove']);
++      }
+       $cells = array(
+         array('data' => '', 'class' => 'content-multiple-drag'),
+         drupal_render($item),
+         array('data' => $delta_element, 'class' => 'delta-order'),
+       );
+-      $rows[] = array(
+-        'data' => $cells,
+-        'class' => 'draggable',
+-      );
++      $row_class = 'draggable';
++      if ($field['multiple'] == 1) {
++        if (!empty($item['_remove']['#default_value'])) {
++          $row_class .= ' content-multiple-removed-row';
++        }
++        $cells[] = array('data' => $remove_element, 'class' => 'content-multiple-remove-cell');
++      }
++      $rows[] = array('data' => $cells, 'class' => $row_class);
+     }
+ 
+     $output .= theme('table', $header, $rows, array('id' => $table_id, 'class' => 'content-multiple-table'));
+@@ -524,6 +534,7 @@ function theme_content_multiple_values($
+     $output .= drupal_render($element[$element['#field_name'] .'_add_more']);
+ 
+     drupal_add_tabledrag($table_id, 'order', 'sibling', $order_class);
++    drupal_add_js(drupal_get_path('module', 'content') .'/theme/content-edit.js');
+   }
+   else {
+     foreach (element_children($element) as $key) {
+@@ -680,12 +691,8 @@ function content_associate_fields($modul
+ function content_field($op, &$node, $field, &$items, $teaser, $page) {
+   switch ($op) {
+     case 'validate':
+-      // TODO: here we could validate that the number of multiple data is correct ?
+-      // We're controlling the number of fields to fill out and saving empty
+-      // ones if a specified number is requested, so no reason to do any validation
+-      // here right now, but if later create a method to indicate whether
+-      // 'required' means all values must be filled out, we can come back
+-      // here and check that they're not empty.
++      // Filter out empty values and items flagged for removal.
++      $items = content_set_empty($field, $items);
+       break;
+ 
+     case 'presave':
+@@ -716,7 +723,7 @@ function content_field($op, &$node, $fie
+         $items = _content_sort_items($field, $items);
+       }
+ 
+-      // Filter out empty values.
++      // Filter out empty values and items flagged for removal.
+       $items = content_set_empty($field, $items);
+ 
+       break;
+@@ -724,14 +731,14 @@ function content_field($op, &$node, $fie
+     case 'view':
+       $addition = array();
+       
+-      // Previewed nodes bypass the 'presave' op, so we need to some massaging.
+-      if ($node->build_mode == NODE_BUILD_PREVIEW && content_handle('widget', 'multiple values', $field) == CONTENT_HANDLE_CORE) {
++      // Previewed nodes bypass the 'presave' op, so we need to do some massaging.
++      if ($node->build_mode == NODE_BUILD_PREVIEW) {
+         if (content_handle('widget', 'multiple values', $field) == CONTENT_HANDLE_CORE) {
+           // Reorder items to account for drag-n-drop reordering.
+           $items = _content_sort_items($field, $items);
+         }
+ 
+-        // Filter out empty values.
++        // Filter out empty values and items flagged for removal.
+         $items = content_set_empty($field, $items);
+       }
+ 
+@@ -770,10 +777,10 @@ function content_field($op, &$node, $fie
+         );
+ 
+         // Fill-in items.
+-        foreach ($items as $delta => $item) {
++        foreach (array_keys($items) as $weight => $delta) {
+           $element['items'][$delta] = array(
+-            '#item' => $item,
+-            '#weight' => $delta,
++            '#item' => $items[$delta],
++            '#weight' => $weight,
+           );
+         }
+ 
+@@ -882,7 +889,7 @@ function content_field($op, &$node, $fie
+ }
+ 
+ /**
+- * Helper function to filter out empty values.
++ * Helper function to filter out empty values and items flagged for removal.
+  *
+  * On order to keep marker rows in the database, the function ensures
+  * that the right number of 'all columns NULL' values is kept.
+@@ -893,20 +900,22 @@ function content_field($op, &$node, $fie
+  *   returns filtered and adjusted item array
+  */
+ function content_set_empty($field, $items) {
+-  // Filter out empty values.
++  // Prepare an empty item.
++  $empty = array();
++  foreach (array_keys($field['columns']) as $column) {
++    $empty[$column] = NULL;
++  }
++
++  // Filter out items flagged for removal.
+   $filtered = array();
+   $function = $field['module'] .'_content_is_empty';
+   foreach ((array) $items as $delta => $item) {
+-    if (!$function($item, $field)) {
+-      $filtered[] = $item;
++    if (empty($item['_remove'])) {
++      $filtered[] = ($function($item, $field) ? $empty : $item);
+     }
+   }
+ 
+   // Make sure we store the right number of 'empty' values.
+-  $empty = array();
+-  foreach (array_keys($field['columns']) as $column) {
+-    $empty[$column] = NULL;
+-  }
+   $pad = $field['multiple'] > 1 ? $field['multiple'] : 1;
+   $filtered = array_pad($filtered, $pad, $empty);
+ 
+@@ -921,7 +930,7 @@ function _content_sort_items($field, $it
+   if ($field['multiple'] >= 1 && isset($items[0]['_weight'])) {
+     usort($items, '_content_sort_items_helper');
+     foreach ($items as $delta => $item) {
+-      if (is_array($items[$delta])) {
++      if (is_array($item) && isset($item['_weight'])) {
+         unset($items[$delta]['_weight']);
+       }
+     }
+@@ -1002,7 +1011,14 @@ function content_storage($op, $node) {
+             if (!isset($additions[$field_name])) {
+               $additions[$field_name] = array();
+             }
+-            $additions[$field_name][] = $item;
++
++            // Preserve deltas when loading items from database.
++            if (isset($row['delta'])) {
++              $additions[$field_name][$row['delta']] = $item;
++            }
++            else {
++              $additions[$field_name][] = $item;
++            }
+           }
+         }
+       }
+Binary files images/remove.png and images/remove.png differ
+diff -rupN includes/content.node_form.inc includes/content.node_form.inc
+--- includes/content.node_form.inc	2009-02-10 23:53:04.000000000 +0100
++++ includes/content.node_form.inc	2009-04-18 10:05:41.000000000 +0200
+@@ -151,21 +151,23 @@ function content_multiple_value_form(&$f
+ 
+   switch ($field['multiple']) {
+     case 0:
++      $deltas = array(0);
+       $max = 0;
+       break;
+-    case 1:
+-      $filled_items = content_set_empty($field, $items);
+-      $current_item_count = isset($form_state['item_count'][$field_name])
+-                            ? $form_state['item_count'][$field_name]
+-                            : count($items);
+-      // We always want at least one empty icon for the user to fill in.
+-      $max = ($current_item_count > count($filled_items))
+-              ? $current_item_count - 1
+-              : $current_item_count;
+ 
++    case 1:
++      $deltas = array_keys($items);
++      $current_item_count = isset($form_state['item_count'][$field_name]) ? $form_state['item_count'][$field_name] : max(1, count($deltas));
++      $max = (!empty($deltas) ? max($deltas) : -1);
++      while (count($deltas) < $current_item_count) {
++        $max++;
++        $deltas[] = $max;
++      }
+       break;
++
+     default:
+       $max = $field['multiple'] - 1;
++      $deltas = range(0, $max);
+       break;
+   }
+ 
+@@ -180,7 +182,7 @@ function content_multiple_value_form(&$f
+   );
+   $function = $field['widget']['module'] .'_widget';
+ 
+-  for ($delta = 0; $delta <= $max; $delta++) {
++  foreach ($deltas as $delta) {
+     if ($element = $function($form, $form_state, $field, $items, $delta)) {
+       $defaults = array(
+         '#title' => ($field['multiple'] >= 1) ? '' : $title,
+@@ -206,6 +208,18 @@ function content_multiple_value_form(&$f
+         );
+       }
+ 
++      // Add a checkbox to allow users remove a single delta item.
++      // See content_set_empty() and theme_content_multiple_values().
++      if ($field['multiple'] == 1) {
++        // We name the element '_remove' to avoid clashing with column names
++        // defined by field modules.
++        $element['_remove'] = array(
++          '#type' => 'checkbox',
++          '#attributes' => array('class' => 'content-multiple-remove-checkbox'),
++          '#default_value' => isset($items[$delta]['_remove']) ? $items[$delta]['_remove'] : 0,
++        );
++      }
++
+       $form_element[$delta] = array_merge($element, $defaults);
+     }
+   }
+@@ -242,7 +256,7 @@ function content_multiple_value_form(&$f
+     $form_element['#prefix'] = '<div id="'. $field_name_css .'-items">';
+     $form_element['#suffix'] = '</div>';
+     $form_element[$field_name .'_add_more']['#prefix'] = '<div class="content-add-more clear-block">';
+-    $form_element[$field_name .'_add_more']['#suffix'] =  '</div>';
++    $form_element[$field_name .'_add_more']['#suffix'] = '</div>';
+   }
+   return $form_element;
+ }
+@@ -264,7 +278,6 @@ function content_add_more_submit($form, 
+   }
+ }
+ 
+-
+ /**
+  * Menu callback for AHAH addition of new empty widgets.
+  */
+@@ -313,11 +326,13 @@ function content_add_more_js($type_name_
+   unset($form_state['values'][$field_name][$field['field_name'] .'_add_more']);
+   foreach ($_POST[$field_name] as $delta => $item) {
+     $form_state['values'][$field_name][$delta]['_weight'] = $item['_weight'];
++    $form_state['values'][$field_name][$delta]['_remove'] = isset($item['_remove']) ? $item['_remove'] : 0;
+   }
+   $form_state['values'][$field_name] = _content_sort_items($field, $form_state['values'][$field_name]);
+   $_POST[$field_name] = _content_sort_items($field, $_POST[$field_name]);
+ 
+   // Build our new form element for the whole field, asking for one more element.
++  $delta = max(array_keys($_POST[$field_name])) + 1;
+   $form_state['item_count'] = array($field_name => count($_POST[$field_name]) + 1);
+   $form_element = content_field_form($form, $form_state, $field);
+   // Let other modules alter it.
+@@ -337,7 +352,6 @@ function content_add_more_js($type_name_
+ 
+   // Build the new form against the incoming $_POST values so that we can
+   // render the new element.
+-  $delta = max(array_keys($_POST[$field_name])) + 1;
+   $_POST[$field_name][$delta]['_weight'] = $delta;
+   $form_state = array('submitted' => FALSE);
+   $form += array(
+diff -rupN tests/content.crud.test tests/content.crud.test
+--- tests/content.crud.test	2008-12-08 13:41:08.000000000 +0100
++++ tests/content.crud.test	2009-04-01 16:27:24.000000000 +0200
+@@ -1234,3 +1234,70 @@ class ContentOptionWidgetTest extends Co
+ 
+ }
+ 
++class ContentEmptyDeltaTest extends ContentCrudTestCase {
++  function getInfo() {
++    return array(
++      'name' => t('Empty deltas'),
++      'description' => t('Test leaving empty values on a multivalue field and then removing them.'),
++      'group' => t('CCK'),
++    );
++  }
++
++  function setUp() {
++    parent::setUp();
++    $this->loginWithPermissions();
++    $this->acquireContentTypes(1);
++  }
++
++  function testEmptyTextField() {
++    // Create a content type with a multivalue text field.
++    $type = $this->content_types[0];
++    $type_url = str_replace('_', '-', $type->type);
++    $value1 = $this->randomName(5);
++    $value2 = $this->randomName(5);
++    $value3 = $this->randomName(5);
++    $field = $this->createFieldText(array('text_processing' => 0, 'multiple' => 1));
++    $field_name = $field['field_name'];
++
++    // Create a node with three values set.
++    $edit = array(
++      'title' => $this->randomName(20),
++      'body' => $this->randomName(20),
++      'type' => $type->name,
++    );
++    $edit[$field_name][0]['value'] = $value1;
++    $edit[$field_name][1]['value'] = $value2;
++    $edit[$field_name][2]['value'] = $value3;
++    $node = $this->drupalCreateNode($edit);
++    $max_delta = max(array_keys($node->{$field_name}));
++    $this->assertEqual($max_delta, 2, 'Three values saved, highest delta is 2');
++    $this->drupalGet('node/'. $node->nid);
++    $this->assertText($value1, 'First value displayed');
++    $this->assertText($value2, 'Second value displayed');
++    $this->assertText($value3, 'Third value displayed');
++
++    // Set second value to an empty string.
++    $node->{$field_name}[1]['value'] = '';
++    node_save($node);
++    $node = node_load($node->nid, NULL, TRUE);
++    $this->assertIdentical($node->{$field_name}[1]['value'], NULL, 'Second value is empty');
++    $max_delta = max(array_keys($node->{$field_name}));
++    $this->assertEqual($max_delta, 2, 'Three values saved, highest delta is 2');
++    $this->drupalGet('node/'. $node->nid);
++    $this->assertText($value1, 'First value displayed');
++    $this->assertNoText($value2, 'Second value not displayed');
++    $this->assertText($value3, 'Third value displayed');
++
++    // Remove the second value.
++    $node->{$field_name}[1]['_remove'] = 1;
++    node_save($node);
++    $node = node_load($node->nid, NULL, TRUE);
++    $this->assertEqual($node->{$field_name}[1]['value'], $value3, 'Third value has moved to delta 1');
++    $max_delta = max(array_keys($node->{$field_name}));
++    $this->assertEqual($max_delta, 1, 'Two values saved, highest delta is 1');
++    $this->drupalGet('node/'. $node->nid);
++    $this->assertText($value1, 'First value displayed');
++    $this->assertNoText($value2, 'Second value not displayed');
++    $this->assertText($value3, 'Third value displayed');
++  }
++}
+diff -rupN theme/content-edit.js theme/content-edit.js
+--- theme/content-edit.js	1970-01-01 01:00:00.000000000 +0100
++++ theme/content-edit.js	2009-04-18 11:16:25.000000000 +0200
+@@ -0,0 +1,253 @@
++// $Id$
++
++/**
++ * Manipulation of content remove buttons.
++ *
++ * TableDrag objects for multiple value fields (and multigroups) are scanned
++ * to find 'remove' checkboxes. These checkboxes are hidden when javascript is
++ * enabled (using the Global CSS Killswitch, html.js, defined in drupal.js).
++ * A new 'remove' button is created here in place of these checkboxes aimed to
++ * provide a more user-friendly method to remove items.
++ */
++Drupal.behaviors.contentRemoveButtons = function(context) {
++  var self = Drupal.contentRemoveButtons;
++
++  $('table.content-multiple-table', context).not('.content-multiple-remove-buttons-processed').addClass('content-multiple-remove-buttons-processed').each(function() {
++    var table = this, tableDrag = Drupal.tableDrag[$(table).attr('id')];
++
++    // Replace remove checkboxes with buttons.
++    $('input.content-multiple-remove-checkbox', table).each(function() {
++      var $checkbox = $(this), $row = $checkbox.parents('tr:first');
++      var isRemoved = $checkbox.attr('checked');
++      var $button = $(Drupal.theme('contentRemoveButton', tableDrag.getRemoveButtonTitle(isRemoved)));
++
++      // Bind the onClick event to the remove button.
++      $button.bind('click', function(event) {
++        if (!self._isBusy) {
++          self.onClick($button, $checkbox, $row, tableDrag);
++        }
++        return false;
++      });
++
++      // Attach the new button to the DOM tree.
++      $checkbox.parent().append($button);
++
++      // If the row is removed, then hide the contents of the cells and show
++      // the removed warning on the cell next to the drag'n'drop cell.
++      if (isRemoved) {
++        self.getCellWrappers($row).hide();
++        self.showRemovedWarning($row, tableDrag);
++
++        // FAPI not rendering the form on errors - case #1:
++        // If the form has been submitted and any error was found, FAPI will
++        // send back the same exact form that was submitted to show the error
++        // messages, but it will not invoke the rendering engine which is where
++        // we actually assign the removed class to the row, so we need to check
++        // this situation here and add the class if it is not present.
++        if (!$row.hasClass('content-multiple-removed-row')) {
++          $row.addClass('content-multiple-removed-row');
++        }
++      }
++      else {
++        // FAPI not rendering the form on errors - case #2:
++        // Similar issue than #1, but this time caused when user removes an
++        // item, previews, FAPI renders the new form with the removed class,
++        // then user changes anything in the form that causes an error, and
++        // also restores the previously removed item. This time, FAPI will
++        // send the form validation error with the item not flagged for removal
++        // but having the removed class that was present when the form was
++        // rendered in the previous step. So we need to remove this class here,
++        // if present, since the item is not really flagged for removal.
++        if ($row.hasClass('content-multiple-removed-row')) {
++          $row.removeClass('content-multiple-removed-row');
++        }
++      }
++    });
++  });
++};
++
++/**
++ * Private namespace for local methods.
++ */
++Drupal.contentRemoveButtons = Drupal.contentRemoveButtons || { _isBusy: false };
++
++/**
++ * onClick handler for remove buttons.
++ *
++ * @param $button
++ *   The jQuery object of the remove button.
++ * @param $checkbox
++ *   The jQuery object of the remove checkbox.
++ * @param $row
++ *   The jQuery object of the table row.
++ * @param tableDrag
++ *   The tableDrag object where the row is.
++ */
++Drupal.contentRemoveButtons.onClick = function($button, $checkbox, $row, tableDrag) {
++  var self = Drupal.contentRemoveButtons;
++
++  // Prevent the user from firing this event while another one is still being
++  // processed. This flag is (should be) restored at end of animations.
++  // Note that this technique is required because the browser may experience
++  // delays while performing the animation, for whatever reason, and if this
++  // process it fired more than once at the same time for the same row, then
++  // it may cause unexpected behavior because the state of the elements being
++  // manipulated would be unknown.
++  self._isBusy = true;
++
++  // Toggle the state of the checkbox.
++  var isRemoved = !$checkbox.attr('checked');
++  $checkbox.attr('checked', isRemoved);
++
++  // Toggle the row class.
++  if (isRemoved) {
++    $row.addClass('content-multiple-removed-row');
++  }
++  else {
++    $row.removeClass('content-multiple-removed-row');
++  }
++
++  // Toggle the button title.
++  $button.attr('title', tableDrag.getRemoveButtonTitle(isRemoved));
++
++  // Get the list of cell wrappers in this row.
++  var $cellWrappers = self.getCellWrappers($row);
++
++  // If for whatever reason this row doesn't have cells with elements,
++  // then we are done, but we still need to reset the global busy flag
++  // and display the tableDrag changed warning.
++  if (!$cellWrappers.size()) {
++    tableDrag.displayChangedWarning();
++    self._isBusy = false;
++    return;
++  }
++
++  // Toggle the visible state of the row cells.
++  $cellWrappers.each(function() {
++    var $cellWrapper = $(this);
++
++    // Drop the removed warning during restore operation.
++    if (!isRemoved) {
++      self.hideRemovedWarning($row);
++    }
++
++    // Toggle the visibility state of the contents of cells.
++    $cellWrapper.animate({opacity: (isRemoved ? 'hide' : 'show')}, 'fast', function() {
++      var $cell = $cellWrapper.parent();
++
++      // Show the removed warning during remove operation.
++      if (isRemoved && $cell.prev(':first').hasClass('content-multiple-drag')) {
++        self.showRemovedWarning($row, tableDrag);
++      }
++
++      // Disable the busy flag when animation of last cell has finished.
++      if ($cell.next(':first').hasClass('delta-order')) {
++        tableDrag.displayChangedWarning();
++        self._isBusy = false;
++      }
++    });
++  });
++};
++
++/**
++ * Show the removed warning on the given row.
++ *
++ * @param $row
++ *   The jQuery object of the table row.
++ * @param tableDrag
++ *   The tableDrag object where the row is.
++ */
++Drupal.contentRemoveButtons.showRemovedWarning = function($row, tableDrag) {
++  $('.content-multiple-drag', $row).next(':first').append(Drupal.theme('contentRemovedWarning', tableDrag.getRemovedWarning()));
++};
++
++/**
++ * Hide the removed warning from the given row.
++ *
++ * @param $row
++ *   The jQuery object of the table row.
++ */
++Drupal.contentRemoveButtons.hideRemovedWarning = function($row) {
++  if ($('.content-multiple-removed-warning', $row).size()) {
++    $('.content-multiple-removed-warning', $row).remove();
++  }
++};
++
++/**
++ * Get cell wrappers for the given row.
++ *
++ * @param $row
++ *   The jQuery object of the table row.
++ */
++Drupal.contentRemoveButtons.getCellWrappers = function($row) {
++  // Create cell wrappers if this row has not already been processed.
++  if (!$('.content-multiple-cell-content-wrapper', $row).size()) {
++    // Wrap the contents of all cells (except the drag'n'drop, weight and
++    // remove button cells) with a dummy block element. This operation makes
++    // animations faster because we just need to show/hide a single element
++    // per cell, and it also prevents from creating more than one warning
++    // element per row.
++    $row.children('td:not(.content-multiple-drag):not(.delta-order):not(.content-multiple-remove-cell)').each(function() {
++      var $cell = $(this);
++      $cell.wrapInner('<div class="content-multiple-cell-content-wrapper"/>');
++    });
++  }
++  return $('.content-multiple-cell-content-wrapper', $row);
++};
++
++/**
++ * Display table change warning when appropriate.
++ */
++Drupal.tableDrag.prototype.displayChangedWarning = function() {
++  if (this.changed == false) {
++    $(Drupal.theme('tableDragChangedWarning')).insertAfter(this.table).hide().fadeIn('slow');
++    this.changed = true;
++  }
++};
++
++/**
++ * Get the title of the remove button.
++ *
++ * This method is an extension of the tableDrag object. This means a separate
++ * module can override this method for a particular tableDrag object. For example,
++ * the multigroup module can change the text to read 'Remove this group of items',
++ * another module could change it to 'Remove this image', and so on...
++ * To override this function:
++ *
++ * @code
++ *  var tableId = $(table).attr('id');
++ *  Drupal.tableDrag[tableId].getRemoveButtonTitle = function(isRemoved) {
++ *    return (isRemoved ? Drupal.t('Restore this foo') : Drupal.t('Remove this foo'));
++ *  };
++ * @endcode
++ *
++ * @param isRemoved
++ *   A flag that indicates the state of the button.
++ */
++Drupal.tableDrag.prototype.getRemoveButtonTitle = function(isRemoved) {
++  return (isRemoved ? Drupal.t('Restore this item') : Drupal.t('Remove this item'));
++};
++
++/**
++ * Get the item removed warning.
++ *
++ * This method is an extension of the tableDrag object. It can be overridden by
++ * a separate module. See getRemoveButtonTitle() for further information.
++ */
++Drupal.tableDrag.prototype.getRemovedWarning = function() {
++  return Drupal.t('Removed');
++};
++
++/**
++ * Theme the remove button.
++ */
++Drupal.theme.prototype.contentRemoveButton = function(title) {
++  return '<a href="javascript:void(0)" class="content-multiple-remove-button" title="'+ title +'"></a>';
++};
++
++/**
++ * Theme the item removed warning.
++ */
++Drupal.theme.prototype.contentRemovedWarning = function(warning) {
++  return '<div class="content-multiple-removed-warning">'+ warning +'</div>';
++};
+diff -rupN theme/content-module.css theme/content-module.css
+--- theme/content-module.css	2009-03-14 19:45:38.000000000 +0100
++++ theme/content-module.css	2009-04-18 10:48:57.000000000 +0200
+@@ -27,6 +27,42 @@
+   margin:0;
+ }
+ 
++.content-multiple-remove-button {
++  display: block;
++  float: right;
++  height: 14px;
++  width: 16px;
++  margin: 2px 0 1px 0;
++  padding: 0;
++  background:transparent url(../images/remove.png) no-repeat 0 0;
++  border-bottom: #C2C9CE 1px solid;
++  border-right: #C2C9CE 1px solid;
++}
++.content-multiple-remove-button:hover {
++  background-position: 0 -14px;
++}
++.content-multiple-removed-row .content-multiple-remove-button {
++  background-position: 0 -28px;
++}
++.content-multiple-removed-row .content-multiple-remove-button:hover {
++  background-position: 0 -42px;
++}
++html.js .content-multiple-removed-row {
++  background-color: #ffffcc;
++}
++.content-multiple-weight-header,
++.content-multiple-remove-header,
++.content-multiple-remove-cell,
++.content-multiple-table td.delta-order {
++  text-align: center;
++}
++html.js .content-multiple-weight-header,
++html.js .content-multiple-remove-header span,
++html.js .content-multiple-table td.delta-order,
++html.js .content-multiple-remove-checkbox {
++  display: none;
++}
++
+ .node-form .number {
+   display:inline;
+   width:auto;

@@ -1,0 +1,13 @@
+diff --git includes/views/handlers/content_handler_field_multiple.inc includes/views/handlers/content_handler_field_multiple.inc
+index 896a85d..9ea21f9 100644
+--- includes/views/handlers/content_handler_field_multiple.inc
++++ includes/views/handlers/content_handler_field_multiple.inc
+@@ -252,7 +252,7 @@ class content_handler_field_multiple extends content_handler_field {
+           // Single-value formatter.
+           foreach ($items as $item) {
+             $output = content_format($field, $item, $formatter_name, $node);
+-            if (!empty($output)) {
++            if (isset($output)) {
+               $rendered[] = $this->render_link($output, (object) array('nid' => $nid));
+             }
+           }

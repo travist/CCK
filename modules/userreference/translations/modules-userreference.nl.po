@@ -1,4 +1,4 @@
-# $Id$
+# $Id: modules-userreference.nl.po,v 1.1.2.1 2009/06/03 20:31:09 hass Exp $
 #
 # Dutch translation of Drupal (general)
 # Copyright YEAR NAME <EMAIL@ADDRESS>

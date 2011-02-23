@@ -1,5 +1,5 @@
 <?php
-// $Id$
+// $Id: content.admin.inc,v 1.181.2.76 2009/11/02 21:21:24 markuspetrux Exp $
 
 /**
  * @file

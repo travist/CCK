@@ -1,5 +1,5 @@
 <?php
-// $Id$
+// $Id: content.node_form.inc,v 1.7.2.21 2009/07/18 00:40:20 markuspetrux Exp $
 
 /**
  * @file
@@ -152,21 +152,21 @@ function content_multiple_value_form(&$form, &$form_state, $field, $items) {
 
   switch ($field['multiple']) {
     case 0:
+      $deltas = array(0);
       $max = 0;
       break;
     case 1:
-      $filled_items = content_set_empty($field, $items);
-      $current_item_count = isset($form_state['item_count'][$field_name])
-                            ? $form_state['item_count'][$field_name]
-                            : count($items);
-      // We always want at least one empty icon for the user to fill in.
-      $max = ($current_item_count > count($filled_items))
-              ? $current_item_count - 1
-              : $current_item_count;
-
+      $deltas = array_keys($items);
+      $current_item_count = isset($form_state['item_count'][$field_name]) ? $form_state['item_count'][$field_name] : max(1, count($deltas));
+      $max = (!empty($deltas) ? max($deltas) : -1);
+      while (count($deltas) < $current_item_count) {
+        $max++;
+        $deltas[] = $max;
+      }
       break;
     default:
-      $max = $field['multiple'] - 1;
+//      $max = $field['multiple'] - 1;
+     $deltas = range(0, $max);
       break;
   }
 
@@ -181,7 +181,7 @@ function content_multiple_value_form(&$form, &$form_state, $field, $items) {
   );
   $function = $field['widget']['module'] .'_widget';
 
-  for ($delta = 0; $delta <= $max; $delta++) {
+  foreach ($deltas as $delta) {
     if ($element = $function($form, $form_state, $field, $items, $delta)) {
       $defaults = array(
         '#title' => ($field['multiple'] >= 1) ? '' : $title,
@@ -204,6 +204,18 @@ function content_multiple_value_form(&$form, &$form_state, $field, $items) {
           '#delta' => $max, // this 'delta' is the 'weight' element's property
           '#default_value' => isset($items[$delta]['_weight']) ? $items[$delta]['_weight'] : $delta,
           '#weight' => 100,
+        );
+      }
+
+      // Add a checkbox to allow users remove a single delta item.
+      // See content_set_empty() and theme_content_multiple_values().
+      if ($field['multiple'] == 1) {
+        // We name the element '_remove' to avoid clashing with column names
+        // defined by field modules.
+        $element['_remove'] = array(
+          '#type' => 'checkbox',
+          '#attributes' => array('class' => 'content-multiple-remove-checkbox'),
+          '#default_value' => isset($items[$delta]['_remove']) ? $items[$delta]['_remove'] : 0,
         );
       }
 
@@ -313,22 +325,17 @@ function content_add_more_js($type_name_url, $field_name) {
   unset($form_state['values'][$field_name][$field['field_name'] .'_add_more']);
   foreach ($_POST[$field_name] as $delta => $item) {
     $form_state['values'][$field_name][$delta]['_weight'] = $item['_weight'];
+    $form_state['values'][$field_name][$delta]['_remove'] = isset($item['_remove']) ? $item['_remove'] : 0;
   }
   $form_state['values'][$field_name] = _content_sort_items($field, $form_state['values'][$field_name]);
   $_POST[$field_name] = _content_sort_items($field, $_POST[$field_name]);
 
   // Build our new form element for the whole field, asking for one more element.
+  $delta = max(array_keys($_POST[$field_name])) + 1;
   $form_state['item_count'] = array($field_name => count($_POST[$field_name]) + 1);
   $form_element = content_field_form($form, $form_state, $field);
   // Let other modules alter it.
-  // We pass an empty array as hook_form_alter's usual 'form_state' parameter,
-  // instead of $form_state (for reasons we may never remember).
-  // However, this argument is still expected to be passed by-reference
-  // (and PHP5.3 will throw an error if it isn't.) This leads to:
-  $data = &$form_element;
-  $empty_form_state = array();
-  $data['__drupal_alter_by_ref'] = array(&$empty_form_state);
-  drupal_alter('form', $data, 'content_add_more_js');
+  drupal_alter('form', $form_element, array(), 'content_add_more_js');
 
   // Add the new element at the right place in the (original, unbuilt) form.
   if (module_exists('fieldgroup') && ($group_name = _fieldgroup_field_get_group($type['type'], $field_name))) {
@@ -344,7 +351,6 @@ function content_add_more_js($type_name_url, $field_name) {
 
   // Build the new form against the incoming $_POST values so that we can
   // render the new element.
-  $delta = max(array_keys($_POST[$field_name])) + 1;
   $_POST[$field_name][$delta]['_weight'] = $delta;
   $form_state = array('submitted' => FALSE);
   $form += array(

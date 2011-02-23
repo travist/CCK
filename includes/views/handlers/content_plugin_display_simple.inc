@@ -1,5 +1,5 @@
 <?php
-// $Id$
+// $Id: content_plugin_display_simple.inc,v 1.1.2.5 2010/06/09 04:10:25 karens Exp $
 
 /**
  * @file

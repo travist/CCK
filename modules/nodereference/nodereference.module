@@ -1,5 +1,5 @@
 <?php
-// $Id$
+// $Id: nodereference.module,v 1.138.2.68 2010/08/11 23:27:10 pwolanin Exp $
 
 /**
  * @file
@@ -15,7 +15,7 @@ function nodereference_menu() {
     'title' => 'Nodereference autocomplete',
     'page callback' => 'nodereference_autocomplete',
     'access callback' => 'nodereference_autocomplete_access',
-    'access arguments' => array(2),
+    'access arguments' => array(2), 
     'type' => MENU_CALLBACK
   );
   return $items;
@@ -125,6 +125,13 @@ function nodereference_field_settings($op, $field) {
             '#required' => FALSE,
             '#description' => t('Provide a comma separated list of arguments to pass to the view.'),
           );
+          $form['advanced']['advanced_view_enforce_view_items'] = array(
+            '#type' => 'checkbox',
+            '#title' => t('Enforce view items in reference list.'),
+            '#default_value' => isset($field['advanced_view_enforce_view_items']) ? $field['advanced_view_enforce_view_items'] : '',
+            '#required' => FALSE,
+            '#description' => t('Provides a way for a user to see a node reference list, but allow any reference to be included.'),
+          );
         }
         else {
           $form['advanced']['no_view_help'] = array(
@@ -140,6 +147,7 @@ function nodereference_field_settings($op, $field) {
       if (module_exists('views')) {
         $settings[] = 'advanced_view';
         $settings[] = 'advanced_view_args';
+        $settings[] = 'advanced_view_enforce_view_items';
       }
       return $settings;
 
@@ -182,7 +190,7 @@ function nodereference_field_settings($op, $field) {
  * Implementation of hook_field().
  */
 function nodereference_field($op, &$node, $field, &$items, $teaser, $page) {
-  static $sanitized_nodes = array();
+  static $sanitized_nodes = array(); 
   
   switch ($op) {
     // When preparing a translation, load any translations of existing references.
@@ -206,29 +214,31 @@ function nodereference_field($op, &$node, $field, &$items, $teaser, $page) {
       return $addition;
 
     case 'validate':
-      // Extract nids to check.
-      $ids = array();
-      foreach ($items as $delta => $item) {
-        if (is_array($item) && !empty($item['nid'])) {
-          if (is_numeric($item['nid'])) {
-            $ids[] = $item['nid'];
-          }
-          else {
-            $error_element = isset($item['_error_element']) ? $item['_error_element'] : '';
-            if (is_array($item) && isset($item['_error_element'])) unset($item['_error_element']);
-            form_set_error($error_element, t("%name: invalid input.", array('%name' => t($field['widget']['label']))));
+      if (!$field['advanced_view_enforce_view_items']) {
+        // Extract nids to check.
+        $ids = array();
+        foreach ($items as $delta => $item) {
+          if (is_array($item) && !empty($item['nid'])) {
+            if (is_numeric($item['nid'])) {
+              $ids[] = $item['nid'];
+            }
+            else {
+              $error_element = isset($item['_error_element']) ? $item['_error_element'] : '';
+              if (is_array($item) && isset($item['_error_element'])) unset($item['_error_element']);
+              form_set_error($error_element, t("%name: invalid input.", array('%name' => t($field['widget']['label']))));
+            }
           }
         }
-      }
-      // Prevent performance hog if there are no ids to check.
-      if ($ids) {
-        $refs = _nodereference_potential_references($field, '', NULL, $ids);
-        foreach ($items as $delta => $item) {
-          if (is_array($item)) {
-            $error_element = isset($item['_error_element']) ? $item['_error_element'] : '';
-            if (is_array($item) && isset($item['_error_element'])) unset($item['_error_element']);
-            if (!empty($item['nid']) && !isset($refs[$item['nid']])) {
-              form_set_error($error_element, t("%name: this post can't be referenced.", array('%name' => t($field['widget']['label']))));
+        // Prevent performance hog if there are no ids to check.
+        if ($ids) {
+          $refs = _nodereference_potential_references($field, '', NULL, $ids);
+          foreach ($items as $delta => $item) {
+            if (is_array($item)) {
+              $error_element = isset($item['_error_element']) ? $item['_error_element'] : '';
+              if (is_array($item) && isset($item['_error_element'])) unset($item['_error_element']);
+              if (!empty($item['nid']) && !isset($refs[$item['nid']])) {
+                form_set_error($error_element, t("%name: this post can't be referenced.", array('%name' => t($field['widget']['label']))));
+              }
             }
           }
         }
@@ -270,7 +280,7 @@ function nodereference_field($op, &$node, $field, &$items, $teaser, $page) {
           }
         }
       }
-      return $items;
+      return $items;    
   }
 }
 
@@ -322,7 +332,7 @@ function theme_nodereference_formatter_default($element) {
     if (!$element['#item']['safe']['status']) {
       $output = '<span class="node-unpublished"> '. t('(Unpublished)') ." $output</span>";
     }
-  }
+  }  
   return $output;
 }
 
@@ -953,9 +963,9 @@ function _nodereference_potential_references_standard($field, $string = '', $mat
   return $references;
 }
 
-/**
+ /**
  * Check access to the menu callback of the autocomplete widget.
- *
+ * 
  * Check for both 'edit' and 'view' access in the unlikely event
  * a user has edit but not view access.
  */

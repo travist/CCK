@@ -1,5 +1,5 @@
 <?php
-// $Id$
+// $Id: node_from_noderef.inc,v 1.1.2.3 2009/07/20 17:34:17 markuspetrux Exp $
 
 /**
  * @file

@@ -1,5 +1,5 @@
 <?php
-// $Id$
+// $Id: fieldgroup.module,v 1.79.2.52 2010/06/09 02:10:01 karens Exp $
 
 /**
  * @file
@@ -586,7 +586,7 @@ function fieldgroup_build_content($group, &$node, $teaser, $page) {
   $label = $group['settings']['display']['label'] == 'above';
   $element = array(
     '#title' => $label ? check_plain(t($group['label'])) : '',
-    '#description' => $label & !empty($group['settings']['display']['description']) ? content_filter_xss(t($group['settings']['display']['description'])) : '',
+    '#description' => $label ? content_filter_xss(t($group['settings']['display']['description'])) : '',
   );
   $format = isset($group['settings']['display'][$context]['format']) ? $group['settings']['display'][$context]['format'] : 'fieldset';
 
@@ -881,7 +881,7 @@ function theme_fieldgroup_fieldset($element) {
  *
  * @see fieldgroup-simple.tpl.php
  */
-function template_preprocess_fieldgroup_simple(&$vars) {
+function fieldgroup_preprocess_fieldgroup_simple(&$vars) {
   $element = $vars['element'];
 
   $vars['group_name'] = $element['#group_name'];

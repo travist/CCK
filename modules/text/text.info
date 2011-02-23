@@ -1,4 +1,4 @@
-; $Id$
+; $Id: text.info,v 1.9 2008/04/23 18:02:31 dww Exp $
 name = Text
 description = Defines simple text field types.
 dependencies[] = content

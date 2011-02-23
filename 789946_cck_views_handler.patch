@@ -1,0 +1,44 @@
+Index: includes/views/handlers/content_plugin_style_php_array_ac.inc
+===================================================================
+RCS file: /cvs/drupal-contrib/contributions/modules/cck/includes/views/handlers/Attic/content_plugin_style_php_array_ac.inc,v
+retrieving revision 1.1.2.3
+diff -u -p -r1.1.2.3 content_plugin_style_php_array_ac.inc
+--- includes/views/handlers/content_plugin_style_php_array_ac.inc	4 Nov 2009 15:31:28 -0000	1.1.2.3
++++ includes/views/handlers/content_plugin_style_php_array_ac.inc	17 Jun 2010 18:42:47 -0000
+@@ -13,6 +13,11 @@ class content_plugin_style_php_array_ac 
+     $sets = $this->render_grouping($this->view->result, $this->options['grouping']);
+ 
+     $base_field = $this->view->base_field;
++    $base_field_alias = $this->view->field[$base_field]->field_alias;
++    if( isset($base_field_alias) ){
++      $base_field = $base_field_alias;
++    }
++
+     $title_field = $this->display->display_options['content_title_field'];
+     $title_field_alias = $this->view->field[$title_field]->field_alias;
+ 
+@@ -21,14 +26,16 @@ class content_plugin_style_php_array_ac 
+     $this->view->row_index = 0;
+     foreach ($sets as $title => $records) {
+       foreach ($records as $label => $row) {
+-        $results[$row->{$base_field}] = array(
+-          'title' => $row->{$title_field_alias},
+-          'rendered' => $this->row_plugin->render($row),
+-        );
+-        $this->view->row_index++;
++        if( !is_null($row->{$base_field}) ) {
++          $results[$row->{$base_field}] = array(
++            'title' => $row->{$title_field_alias},
++            'rendered' => $this->row_plugin->render($row),
++          );
++          $this->view->row_index++;
++        }
+       }
+-    }
+-    unset($this->view->row_index);
+-    return $results;
+   }
++  unset($this->view->row_index);
++  return $results;
++}
+ }
