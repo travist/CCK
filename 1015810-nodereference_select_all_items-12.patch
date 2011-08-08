@@ -1,0 +1,13 @@
+diff --git a/modules/nodereference/nodereference.module b/modules/nodereference/nodereference.module
+index 30b57f5..65d9df4 100755
+--- a/modules/nodereference/nodereference.module
++++ b/modules/nodereference/nodereference.module
+@@ -872,7 +872,7 @@ function _nodereference_potential_references_views($field, $string = '', $match
+ 
+     // Limit result set size.
+     $limit = isset($limit) ? $limit : 0;
+-    $view->display_handler->set_option('items_per_page', $limit);
++    $view->set_items_per_page($limit);
+ 
+     // Get arguments for the view.
+     if (!empty($field['advanced_view_args'])) {
