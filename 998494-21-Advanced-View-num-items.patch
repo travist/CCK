@@ -1,0 +1,36 @@
+diff --git a/modules/nodereference/nodereference.module b/modules/nodereference/nodereference.module
+index 5f49e79..7ff87b4 100644
+--- a/modules/nodereference/nodereference.module
++++ b/modules/nodereference/nodereference.module
+@@ -861,7 +861,12 @@ function _nodereference_potential_references_views($field, $string = '', $match
+ 
+     // Limit result set size.
+     $limit = isset($limit) ? $limit : 0;
+-    $view->display_handler->set_option('items_per_page', $limit);
++    if (method_exists($view, 'set_items_per_page')) {
++      $view->set_items_per_page($limit);
++    }
++    else {
++      $view->display_handler->set_option('items_per_page', $limit);
++    }
+ 
+     // Get arguments for the view.
+     if (!empty($field['advanced_view_args'])) {
+diff --git a/modules/userreference/userreference.module b/modules/userreference/userreference.module
+index 2132aaf..ebbbe15 100644
+--- a/modules/userreference/userreference.module
++++ b/modules/userreference/userreference.module
+@@ -726,7 +726,12 @@ function _userreference_potential_references_views($field, $string = '', $match
+ 
+     // Limit result set size.
+     $limit = isset($limit) ? $limit : 0;
+-    $view->display_handler->set_option('items_per_page', $limit);
++    if (method_exists($view, 'set_items_per_page')) {
++      $view->set_items_per_page($limit);
++    }
++    else {
++      $view->display_handler->set_option('items_per_page', $limit);
++    }
+ 
+     // Get arguments for the view.
+     if (!empty($field['advanced_view_args'])) {
